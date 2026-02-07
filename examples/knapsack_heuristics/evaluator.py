@@ -21,6 +21,95 @@ def solve_knapsack_dp(items, capacity):
     return dp[n][capacity]
 
 
+def generate_extreme_trap(n):
+    """
+    Generates a trap where a tiny high-density item blocks a massive optimal item.
+    This exploits the fact that greedy commits to high density without looking ahead at capacity.
+    """
+    capacity = 1000
+
+    # 1. Optimal Item: Weight=Capacity, Value=Capacity. Density=1.0.
+    # Takes full capacity.
+    opt_item = {"value": capacity, "weight": capacity}
+
+    # 2. Trap Item: Tiny weight, density > 1.0.
+    # Weight 1, Value 2. Density 2.0.
+    trap_item = {"value": 2, "weight": 1}
+
+    items = [opt_item, trap_item]
+
+    # 3. Filler items that are too big to fit in the gap (capacity - 1 = 999)
+    # or have very poor value.
+    # We want to ensure greedy doesn't find anything else to pick.
+    for _ in range(n - 2):
+        # Make them heavy so they don't fit with the trap
+        # Or make them very low value so picking them doesn't help score much.
+        # Let's make them fit but be terrible value.
+        # Weight 999, Value 1.
+        items.append({"value": 1, "weight": capacity})
+
+    # Greedy order:
+    # 1. Trap (Ratio 2.0). Picks it. Rem Cap 999.
+    # 2. Opt (Ratio 1.0). Weight 1000. Fails.
+    # 3. Fillers (Ratio ~0). Weight 1000. Fail.
+    # Result: Value 2.
+
+    # Optimal order:
+    # 1. Opt (Ratio 1.0). Picks it. Rem Cap 0.
+    # Result: Value 1000.
+
+    # Score: 2/1000 = 0.002.
+
+    optimal_value = solve_knapsack_dp(items, capacity)
+    return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
+
+
+def generate_generalized_trap(n):
+    """
+    Generates a scalable trap instance.
+    General idea:
+    1 item with slightly better density but large weight.
+    2 items with slightly worse density that fill capacity perfectly.
+    """
+    # Scale parameters
+    k = random.randint(10, 100)  # multiplier
+
+    # Capacity
+    capacity = 2 * k
+
+    # Item A: Weight k+1, Value k+2. Density = (k+2)/(k+1) > 1
+    item_a = {"value": k + 2, "weight": k + 1}
+
+    # Item B, C: Weight k, Value k. Density = 1
+    item_b = {"value": k, "weight": k}
+    item_c = {"value": k, "weight": k}
+
+    items = [item_a, item_b, item_c]
+
+    # Add noise items (very low value/weight)
+    for _ in range(n - 3):
+        items.append({"value": 0, "weight": 1000})  # Useless
+
+    optimal_value = solve_knapsack_dp(items, capacity)
+    # Should be 2k (Item B + Item C) vs k+2 (Item A)
+
+    return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
+
+
+def generate_trap_instance():
+    # Keep the original fixed one as it's a good baseline unit test
+    items = [
+        {"value": 52, "weight": 51},
+        {"value": 50, "weight": 50},
+        {"value": 50, "weight": 50},
+        {"value": 1, "weight": 1},
+        {"value": 1, "weight": 1},
+    ]
+    capacity = 100
+    optimal_value = 100
+    return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
+
+
 def generate_difficult_instance(n, weight_range=(10, 100), correlation="strong"):
     """
     Generates a difficult knapsack instance.
@@ -101,6 +190,21 @@ def get_test_instances():
                 {"value": 20, "weight": 25},
             ],
             "optimal_value": 40,
+        },
+        # 7. Specific Greedy Trap Hard
+        {
+            **generate_trap_instance(),
+            "name": "greedy_trap_fixed",
+        },
+        # 8. Extreme Greedy Trap (Tiny Item blocks Huge Item)
+        {
+            **generate_extreme_trap(10),
+            "name": "greedy_trap_extreme",
+        },
+        # 9. Generalized Trap
+        {
+            **generate_generalized_trap(10),
+            "name": "greedy_trap_generalized",
         },
     ]
     return [i for i in instances if i["optimal_value"] > 0]
