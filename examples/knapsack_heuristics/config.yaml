@@ -10,10 +10,11 @@ llm:
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   api_key: "${OPENAI_API_KEY}"
   temperature: 0.7
-  max_tokens: 2048
+  max_tokens: 4096
 
 # Evolution settings
 diff_based_evolution: true
+diff_pattern: '<<<<<<< SEARCH\s*(.*?)\s*=======\s*(.*?)\s*>>>>>>> REPLACE'
 
 # Database settings
 database:
@@ -33,7 +34,9 @@ prompt:
     You are an expert algorithm designer. Your task is to evolve a heuristic for the 0/1 Knapsack problem.
     The goal is to select a subset of items that maximizes the total value without exceeding the weight capacity.
     
-    CRITICAL: You MUST use the Search & Replace format for all code modifications:
+    CRITICAL: You MUST use the Search & Replace format for all code modifications.
+    DO NOT EXPLAIN. OUTPUT CODE DIFFS ONLY.
+    
     <<<<<<< SEARCH
     [exact code to find]
     =======
