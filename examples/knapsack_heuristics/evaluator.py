@@ -3,7 +3,18 @@ import sys
 import random
 import concurrent.futures
 import traceback
+import yaml
+from pathlib import Path
 from openevolve.evaluation_result import EvaluationResult
+
+
+def _load_config():
+    """Loads settings from config.yaml in the same directory."""
+    config_path = Path(__file__).parent / "config.yaml"
+    if config_path.exists():
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
+    return {}
 
 
 def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
@@ -134,10 +145,13 @@ def generate_difficult_instance(n, weight_range=(10, 100), correlation="strong")
     return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
 
 
-def get_test_instances():
+def get_test_instances(seed=None):
     """Returns a list of difficult knapsack problem instances."""
     # Seed for reproducibility
-    random.seed(42)
+    if seed is not None:
+        random.seed(seed)
+    else:
+        random.seed(42)  # Default fallback
 
     instances = [
         # 1. Tricky small instance (Greedy trap)
@@ -228,7 +242,11 @@ def evaluate(module_path):
                 artifacts=error_artifacts,
             )
 
-        test_instances = get_test_instances()
+        config = _load_config()
+        eval_seed = config.get("evaluator", {}).get("random_seed") or config.get(
+            "random_seed", 42
+        )
+        test_instances = get_test_instances(seed=eval_seed)
         total_score = 0
         correct_count = 0
         instance_scores = {}
@@ -332,7 +350,11 @@ def evaluate_stage1(program_path):
                 metrics={"combined_score": 0.0, "runs_successfully": 0.0}
             )
 
-        test_instances = get_test_instances()[:3]
+        config = _load_config()
+        eval_seed = config.get("evaluator", {}).get("random_seed") or config.get(
+            "random_seed", 42
+        )
+        test_instances = get_test_instances(seed=eval_seed)[:3]
         total_score = 0
         correct_count = 0
         success = True

@@ -3,6 +3,7 @@ max_iterations: 20
 checkpoint_interval: 5
 log_level: "INFO"
 language: "python"
+random_seed: 42
 
 # LLM settings
 llm:
@@ -33,6 +34,7 @@ evaluator:
   timeout: 60
   cascade_thresholds: [0.8]
   parallel_evaluations: 4
+  random_seed: 42
 
 # Prompt settings
 prompt:
