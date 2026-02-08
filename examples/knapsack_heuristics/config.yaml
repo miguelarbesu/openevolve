@@ -1,5 +1,5 @@
 # General settings
-max_iterations: 20
+max_iterations: 50
 checkpoint_interval: 5
 log_level: "INFO"
 language: "python"
