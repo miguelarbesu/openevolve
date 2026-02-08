@@ -1,7 +1,22 @@
 import importlib.util
-import os
 import sys
 import random
+import concurrent.futures
+import traceback
+from openevolve.evaluation_result import EvaluationResult
+
+
+def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
+    """
+    Run a function with a timeout using concurrent.futures
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        try:
+            result = future.result(timeout=timeout_seconds)
+            return result
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
 
 
 def solve_knapsack_dp(items, capacity):
@@ -40,25 +55,8 @@ def generate_extreme_trap(n):
 
     # 3. Filler items that are too big to fit in the gap (capacity - 1 = 999)
     # or have very poor value.
-    # We want to ensure greedy doesn't find anything else to pick.
     for _ in range(n - 2):
-        # Make them heavy so they don't fit with the trap
-        # Or make them very low value so picking them doesn't help score much.
-        # Let's make them fit but be terrible value.
-        # Weight 999, Value 1.
         items.append({"value": 1, "weight": capacity})
-
-    # Greedy order:
-    # 1. Trap (Ratio 2.0). Picks it. Rem Cap 999.
-    # 2. Opt (Ratio 1.0). Weight 1000. Fails.
-    # 3. Fillers (Ratio ~0). Weight 1000. Fail.
-    # Result: Value 2.
-
-    # Optimal order:
-    # 1. Opt (Ratio 1.0). Picks it. Rem Cap 0.
-    # Result: Value 1000.
-
-    # Score: 2/1000 = 0.002.
 
     optimal_value = solve_knapsack_dp(items, capacity)
     return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
@@ -91,7 +89,6 @@ def generate_generalized_trap(n):
         items.append({"value": 0, "weight": 1000})  # Useless
 
     optimal_value = solve_knapsack_dp(items, capacity)
-    # Should be 2k (Item B + Item C) vs k+2 (Item A)
 
     return {"capacity": capacity, "items": items, "optimal_value": optimal_value}
 
@@ -113,10 +110,6 @@ def generate_trap_instance():
 def generate_difficult_instance(n, weight_range=(10, 100), correlation="strong"):
     """
     Generates a difficult knapsack instance.
-    "strong": value = weight + 10 (hard for some, but greedy ratio still okay)
-    "weak": value = weight + random(-5, 5)
-    "uncorrelated": value and weight independent
-    "inverse": large weights have slightly better value but worse ratio
     """
     items = []
     total_weight = 0
@@ -214,69 +207,191 @@ def evaluate(module_path):
     """
     Evaluates the solve_knapsack function in the given module.
     """
-    # Load the module dynamically
-    spec = importlib.util.spec_from_file_location("evolved_module", module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        # Load the module dynamically
+        spec = importlib.util.spec_from_file_location("evolved_module", module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
 
-    if not hasattr(module, "solve_knapsack"):
-        return {
-            "combined_score": 0.0,
-            "correctness": 0.0,
-            "error": "Function solve_knapsack not found",
-        }
-
-    test_instances = get_test_instances()
-    total_score = 0
-    correct_count = 0
-    instance_scores = {}
-    for instance in test_instances:
-        instance_score = 0.0
-        try:
-            selected_indices = module.solve_knapsack(
-                instance["items"], instance["capacity"]
+        if not hasattr(module, "solve_knapsack"):
+            error_artifacts = {
+                "error_type": "MissingFunction",
+                "error_message": "Program is missing required 'solve_knapsack' function",
+                "suggestion": "Make sure your program includes a function named 'solve_knapsack' that takes (items, capacity)",
+            }
+            return EvaluationResult(
+                metrics={
+                    "combined_score": 0.0,
+                    "correctness": 0.0,
+                    "error": "Function solve_knapsack not found",
+                },
+                artifacts=error_artifacts,
             )
 
-            total_value = 0
-            total_weight = 0
-            valid_indices = True
+        test_instances = get_test_instances()
+        total_score = 0
+        correct_count = 0
+        instance_scores = {}
 
-            if not isinstance(selected_indices, (list, tuple)):
-                valid_indices = False
-            elif len(set(selected_indices)) != len(selected_indices):
-                valid_indices = False
+        for instance in test_instances:
+            instance_score = 0.0
+            try:
+                # Run with timeout to prevent infinite loops in evolved code
+                selected_indices = run_with_timeout(
+                    module.solve_knapsack,
+                    args=(instance["items"], instance["capacity"]),
+                    timeout_seconds=2,
+                )
 
-            if valid_indices:
-                for idx in selected_indices:
-                    if not (0 <= idx < len(instance["items"])):
-                        valid_indices = False
-                        break
-                    total_value += instance["items"][idx]["value"]
-                    total_weight += instance["items"][idx]["weight"]
+                total_value = 0
+                total_weight = 0
+                valid_indices = True
 
-            if valid_indices and total_weight <= instance["capacity"]:
-                correct_count += 1
-                # Normalized by the actual optimal value found by DP
-                instance_score = min(1.0, total_value / instance["optimal_value"])
-            else:
+                if not isinstance(selected_indices, (list, tuple)):
+                    valid_indices = False
+                elif len(set(selected_indices)) != len(selected_indices):
+                    # Duplicate indices selected
+                    valid_indices = False
+
+                if valid_indices:
+                    for idx in selected_indices:
+                        if not isinstance(idx, int) or not (
+                            0 <= idx < len(instance["items"])
+                        ):
+                            valid_indices = False
+                            break
+                        total_value += instance["items"][idx]["value"]
+                        total_weight += instance["items"][idx]["weight"]
+
+                if valid_indices and total_weight <= instance["capacity"]:
+                    correct_count += 1
+                    # Normalized by the actual optimal value found by DP
+                    instance_score = min(1.0, total_value / instance["optimal_value"])
+                else:
+                    instance_score = 0.0
+
+            except Exception as e:
+                # Failed to execute trial
+                print(f"Trial failed: {str(e)}")
                 instance_score = 0.0
 
-        except Exception:
-            # Failed to execute
-            instance_score = 0.0
+            total_score += instance_score
+            instance_scores[instance["name"]] = instance_score
 
-        total_score += instance_score
-        instance_scores[instance["name"]] = instance_score
+        num_instances = len(test_instances)
+        combined_score = total_score / num_instances if num_instances > 0 else 0
+        correctness = correct_count / num_instances if num_instances > 0 else 0
 
-    num_instances = len(test_instances)
-    combined_score = total_score / num_instances if num_instances > 0 else 0
-    correctness = correct_count / num_instances if num_instances > 0 else 0
+        artifacts = {
+            "num_test_instances": num_instances,
+            "correctness_rate": f"{correctness:.2%}",
+            "average_optimality": f"{combined_score:.4f}",
+            "instance_breakdown": instance_scores,
+        }
 
-    return {
-        "combined_score": combined_score,
-        "correctness": correctness,
-        "instance_scores": instance_scores,
-    }
+        return EvaluationResult(
+            metrics={
+                "combined_score": combined_score,
+                "correctness": correctness,
+            },
+            artifacts=artifacts,
+        )
+
+    except Exception as e:
+        print(f"Evaluation failed completely: {str(e)}")
+        print(traceback.format_exc())
+
+        error_artifacts = {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "full_traceback": traceback.format_exc(),
+            "suggestion": "Check for syntax errors or missing imports in the generated code",
+        }
+
+        return EvaluationResult(
+            metrics={
+                "combined_score": 0.0,
+                "correctness": 0.0,
+                "error": str(e),
+            },
+            artifacts=error_artifacts,
+        )
+
+
+def evaluate_stage1(program_path):
+    """First stage evaluation with a subset of trials for speed"""
+    # Just run the first 3 instances as a quick check
+    try:
+        # Load the module dynamically
+        spec = importlib.util.spec_from_file_location("evolved_module", program_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if not hasattr(module, "solve_knapsack"):
+            return EvaluationResult(
+                metrics={"combined_score": 0.0, "runs_successfully": 0.0}
+            )
+
+        test_instances = get_test_instances()[:3]
+        total_score = 0
+        correct_count = 0
+        success = True
+
+        for instance in test_instances:
+            try:
+                selected_indices = run_with_timeout(
+                    module.solve_knapsack,
+                    args=(instance["items"], instance["capacity"]),
+                    timeout_seconds=1,
+                )
+
+                total_weight = sum(
+                    instance["items"][i]["weight"]
+                    for i in selected_indices
+                    if 0 <= i < len(instance["items"])
+                )
+                total_value = sum(
+                    instance["items"][i]["value"]
+                    for i in selected_indices
+                    if 0 <= i < len(instance["items"])
+                )
+
+                if total_weight <= instance["capacity"]:
+                    total_score += total_value / instance["optimal_value"]
+                    correct_count += 1
+            except Exception:
+                success = False
+                break
+
+        if not success:
+            return EvaluationResult(
+                metrics={
+                    "combined_score": 0.0,
+                    "correctness": 0.0,
+                    "runs_successfully": 0.0,
+                }
+            )
+
+        return EvaluationResult(
+            metrics={
+                "combined_score": total_score / 3.0,
+                "correctness": correct_count / 3.0,
+                "runs_successfully": 1.0,
+            }
+        )
+    except Exception:
+        return EvaluationResult(
+            metrics={
+                "combined_score": 0.0,
+                "correctness": 0.0,
+                "runs_successfully": 0.0,
+            }
+        )
+
+
+def evaluate_stage2(program_path):
+    """Second stage evaluation: full test suite"""
+    return evaluate(program_path)
 
 
 if __name__ == "__main__":
@@ -284,8 +399,9 @@ if __name__ == "__main__":
         print("Usage: python evaluator.py <module_path>")
         sys.exit(1)
 
-    metrics = evaluate(sys.argv[1])
+    result = evaluate(sys.argv[1])
+    metrics = result.metrics
     print(
         f"combined_score={metrics['combined_score']:.4f}, correctness={metrics['correctness']:.4f}"
     )
-    print(f"instance_scores={metrics['instance_scores']}")
+    print(f"artifacts={result.artifacts}")

@@ -1,3 +1,4 @@
+# EVOLVE-BLOCK-START
 def solve_knapsack(items, capacity):
     """
     Solves the 0/1 knapsack problem using a greedy heuristic based on value/weight ratio.
@@ -28,3 +29,19 @@ def solve_knapsack(items, capacity):
             current_weight += item_weight
 
     return selected_indices
+
+
+# EVOLVE-BLOCK-END
+
+
+if __name__ == "__main__":
+    test_items = [
+        {"value": 60, "weight": 10},
+        {"value": 100, "weight": 20},
+        {"value": 120, "weight": 30},
+    ]
+    test_capacity = 50
+    indices = solve_knapsack(test_items, test_capacity)
+    print(f"Selected indices: {indices}")
+    print(f"Total value: {sum(test_items[i]['value'] for i in indices)}")
+    print(f"Total weight: {sum(test_items[i]['weight'] for i in indices)}")

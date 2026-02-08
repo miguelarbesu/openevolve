@@ -1,0 +1,4 @@
+
+# OpenEvolve and standard dependencies are usually pre-installed
+# Adding numpy just in case heuristics want to use it
+numpy
