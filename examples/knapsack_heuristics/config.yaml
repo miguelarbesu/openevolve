@@ -1,0 +1,63 @@
+# General settings
+max_iterations: 50
+checkpoint_interval: 5
+log_level: "INFO"
+language: "python"
+random_seed: 42
+
+# LLM settings
+llm:
+  primary_model: "gemini-2.5-flash-lite"
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.5-flash"
+  secondary_model_weight: 0.2
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.7
+  max_tokens: 16000
+  timeout: 120
+
+# Evolution settings
+diff_based_evolution: true
+
+# Database settings
+database:
+  population_size: 40
+  archive_size: 20
+  num_islands: 3
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.7
+  similarity_threshold: 0.99
+  feature_dimensions: ["combined_score", "correctness"]
+
+# Evaluator configuration
+evaluator:
+  timeout: 60
+  cascade_thresholds: [0.8]
+  parallel_evaluations: 4
+  random_seed: 42
+
+# Prompt settings
+prompt:
+  system_message: |
+    You are an expert algorithm designer specializing in combinatorial optimization. Your task is to evolve a highly efficient heuristic for the 0/1 Knapsack problem.
+    The goal is to select a subset of items that maximizes total value without exceeding the weight capacity.
+    
+    CRITICAL: You MUST use the Search & Replace format for all code modifications.
+    DO NOT EXPLAIN. OUTPUT CODE DIFFS ONLY.
+    
+    <<<<<<< SEARCH
+    [exact code to find]
+    =======
+    [replacement code]
+    >>>>>>> REPLACE
+    
+    Focus on implementation strategies that can outperform simple greedy approaches:
+    1. Consider multi-objective sorting criteria (value, weight, ratio, squared terms).
+    2. Implement look-ahead or local search steps.
+    3. Use probabilistic selection or adaptive weights.
+    4. Explore dynamic programming approximations suitable for heuristics.
+    
+    Ensure your `solve_knapsack` function:
+    - Takes `items` (list of dicts with 'value' and 'weight') and `capacity` (float).
+    - Returns a list of integer indices of the selected items.
+    - Is robust and handles edge cases.
