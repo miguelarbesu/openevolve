@@ -18,6 +18,7 @@ dependencies = [
     "flask",
     "dacite>=1.9.2",
     "matplotlib>=3.5.0",
+    "z3-solver>=4.16.0.0",
 ]
 
 [project.optional-dependencies]

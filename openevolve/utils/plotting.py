@@ -6,7 +6,7 @@ import glob
 import logging
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
 
@@ -17,12 +17,8 @@ def parse_log_file(log_file: str) -> Dict[str, List[float]]:
     """
     Parse the log file to extract iteration, best score, avg score, and diversity.
     """
-    data = {
-        "iterations": [],
-        "best_scores": [],
-        "avg_scores": [],
-        "diversities": [],
-    }
+    # Use a dictionary to store the best/latest data per iteration
+    iteration_data = {}
 
     current_iter = 0
 
@@ -30,28 +26,35 @@ def parse_log_file(log_file: str) -> Dict[str, List[float]]:
         with open(log_file, "r") as f:
             for line in f:
                 # Match iteration start/end to keep track
-                # "Iteration 14: Program ..."
-                iter_match = re.search(r"Iteration (\d+):", line)
+                # Could be "Iteration 14: Program ..." or "Checkpoint ... at iteration 10"
+                iter_match = re.search(r"Iteration (\d+):|at iteration (\d+)", line)
                 if iter_match:
-                    current_iter = int(iter_match.group(1))
+                    current_iter = int(iter_match.group(1) or iter_match.group(2))
 
                 # Match Island Status for aggregate metrics
                 # "Island 0: 13 programs, best=0.9162, avg=0.9136, diversity=44.57"
-                # We prioritize this for plotting aggregate progress
                 island_match = re.search(
-                    r"Island \d+: .* best=([\d\.]+), avg=([\d\.]+), diversity=([\d\.]+)",
+                    r"Island 0: .* best=([\d\.]+), avg=([\d\.]+), diversity=([\d\.]+)",
                     line,
                 )
                 if island_match:
-                    # We might have multiple islands, but let's just take the first one found per reporting cycle
-                    # or strictly Island 0 for simplicity in this single-island run context
-                    if "Island 0" in line:
-                        data["iterations"].append(current_iter)
-                        data["best_scores"].append(float(island_match.group(1)))
-                        data["avg_scores"].append(float(island_match.group(2)))
-                        data["diversities"].append(float(island_match.group(3)))
+                    iteration_data[current_iter] = {
+                        "best": float(island_match.group(1)),
+                        "avg": float(island_match.group(2)),
+                        "diversity": float(island_match.group(3)),
+                    }
     except Exception as e:
         logger.error(f"Error parsing log file {log_file}: {e}")
+
+    # Sort by iteration to ensure lines are drawn correctly
+    sorted_iterations = sorted(iteration_data.keys())
+
+    data = {
+        "iterations": sorted_iterations,
+        "best_scores": [iteration_data[i]["best"] for i in sorted_iterations],
+        "avg_scores": [iteration_data[i]["avg"] for i in sorted_iterations],
+        "diversities": [iteration_data[i]["diversity"] for i in sorted_iterations],
+    }
 
     return data
 
