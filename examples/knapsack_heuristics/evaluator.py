@@ -4,8 +4,14 @@ import random
 import concurrent.futures
 import traceback
 import yaml
+import re
 from pathlib import Path
 from openevolve.evaluation_result import EvaluationResult
+
+try:
+    from .z3_verifier import Z3KnapsackVerifier
+except (ImportError, ValueError):
+    from z3_verifier import Z3KnapsackVerifier
 
 
 def _load_config():
@@ -414,6 +420,103 @@ def evaluate_stage1(program_path):
 def evaluate_stage2(program_path):
     """Second stage evaluation: full test suite"""
     return evaluate(program_path)
+
+
+async def evaluate_stage3(program_path, llm_ensemble=None):
+    """
+    Third stage: Formal Verification with Z3 (The Boss Fight)
+    Uses LLM to transpile Python heuristic to Z3 constraints.
+    """
+    if llm_ensemble is None:
+        # Fallback if no LLM ensemble is provided (e.g. direct run)
+        return EvaluationResult(metrics={"z3_verified": 0.0, "combined_score": 0.0})
+
+    try:
+        with open(program_path, "r") as f:
+            program_code = f.read()
+
+        # 1. Transpilation Step: Ask LLM to convert Python to Z3 Logic
+        system_prompt = """
+        You are a Formal Verification specialist. Your task is to convert a Python knapsack heuristic into Z3 symbolic logic.
+        The Python code is a function `solve_knapsack(items, capacity)` that returns a list of selected indices.
+        
+        You must provide a Python snippet that defines a function `get_heuristic_selection(W, V, Cap, solver)`.
+        - `W`: List of 5 Z3 symbolic integers [w0, w1, w2, w3, w4]
+        - `V`: List of 5 Z3 symbolic integers [v0, v1, v2, v3, v4]
+        - `Cap`: Z3 symbolic integer
+        - `solver`: A z3.Solver() instance
+        - Returns: A list of 5 Z3 integer expressions [x0, x1, x2, x3, x4] where each xi is 0 or 1.
+        
+        CRITICAL RULES:
+        1. NO SYMBOLIC INDEXING: W and V are Python lists. Expressions like `W[p[k]]` or `rank_s[p_s[k]]` will FAIL.
+        2. USE sym_get: I have provided a helper `sym_get(list, index)`. Use it for ALL symbolic access: `sym_get(W, p[k])`.
+        3. STRICT TOTAL ORDER: When sorting, ensure you handle ties (e.g., using original index) so Z3 doesn't find multiple 'optimal' permutations.
+        
+        Return ONLY the Python code block starting with 'def get_heuristic_selection'.
+        """
+
+        user_prompt = f"Convert this Python heuristic to Z3 logic for 5 items:\n\n```python\n{program_code}\n```"
+
+        # 1. Transpilation Step
+        response = await llm_ensemble.generate_with_context(
+            system_message=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        # Extract code block - more robust extraction
+        z3_logic_code = None
+        # Try finding markdown code blocks (with or without 'python' label)
+        match = re.search(r"```(?:python)?\s*\n?(.*?)\n?```", response, re.DOTALL)
+        if match:
+            z3_logic_code = match.group(1).strip()
+        elif "def get_heuristic_selection" in response:
+            # Fallback: strip backticks if they leaked into the response
+            z3_logic_code = response.replace("```python", "").replace("```", "").strip()
+
+        if not z3_logic_code:
+            return EvaluationResult(
+                metrics={"z3_verified": 0.0, "combined_score": 0.0},
+                artifacts={
+                    "z3_error": "LLM failed to generate Z3 logic",
+                    "raw_response": response,
+                },
+            )
+
+        # 2. Verification Step: Run Z3 Solver
+        verifier = Z3KnapsackVerifier(n_items=5, fitness_threshold=0.9)
+        result = verifier.verify(z3_logic_code)
+
+        if result.get("status") == "proven":
+            return EvaluationResult(
+                metrics={"z3_verified": 1.0, "combined_score": 1.0},
+                artifacts={"z3_message": result.get("message")},
+            )
+        else:
+            # Failed verification or search found counter-example
+            ce = result.get("counter_example")
+            artifacts = {
+                "z3_verified": False,
+                "z3_counter_example": ce,
+                "z3_logic": z3_logic_code,
+            }
+            # Merge any other result keys (like errors from verifier)
+            for k, v in result.items():
+                if k not in ["status", "counter_example"]:
+                    artifacts[f"z3_{k}"] = v
+            if ce:
+                artifacts["error_message"] = (
+                    f"Z3 found a counter-example where optimality is < 90%. Try fixing it for this case: {ce}"
+                )
+
+            return EvaluationResult(
+                metrics={"z3_verified": 0.0, "combined_score": 0.0}, artifacts=artifacts
+            )
+
+    except Exception as e:
+        return EvaluationResult(
+            metrics={"z3_verified": 0.0, "combined_score": 0.0},
+            artifacts={"z3_error": str(e), "traceback": traceback.format_exc()},
+        )
 
 
 if __name__ == "__main__":
