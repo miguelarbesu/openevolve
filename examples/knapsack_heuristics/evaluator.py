@@ -489,7 +489,10 @@ async def evaluate_stage3(program_path, llm_ensemble=None):
         if result.get("status") == "proven":
             return EvaluationResult(
                 metrics={"z3_verified": 1.0, "combined_score": 1.0},
-                artifacts={"z3_message": result.get("message")},
+                artifacts={
+                    "z3_message": result.get("message"),
+                    "z3_logic": z3_logic_code,
+                },
             )
         else:
             # Failed verification or search found counter-example
