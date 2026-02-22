@@ -36,6 +36,9 @@ evaluator:
   cascade_thresholds: [0.7, 0.85]
   parallel_evaluations: 4
   random_seed: 42
+  z3:
+    n_items: 5
+    fitness_threshold: 0.9
 
 # Prompt settings
 prompt:

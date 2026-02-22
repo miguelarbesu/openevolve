@@ -483,7 +483,12 @@ async def evaluate_stage3(program_path, llm_ensemble=None):
             )
 
         # 2. Verification Step: Run Z3 Solver
-        verifier = Z3KnapsackVerifier(n_items=5, fitness_threshold=0.9)
+        config = _load_config()
+        z3_config = config.get("evaluator", {}).get("z3", {})
+        n_items = z3_config.get("n_items", 5)
+        threshold = z3_config.get("fitness_threshold", 0.9)
+
+        verifier = Z3KnapsackVerifier(n_items=n_items, fitness_threshold=threshold)
         result = verifier.verify(z3_logic_code)
 
         if result.get("status") == "proven":

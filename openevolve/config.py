@@ -70,8 +70,8 @@ class LLMModelConfig:
 
     # Request parameters
     timeout: int = None
-    retries: int = None
-    retry_delay: int = None
+    retries: int = 3
+    retry_delay: int = 5
 
     # Reproducibility
     random_seed: Optional[int] = None
@@ -182,7 +182,9 @@ class LLMConfig(LLMModelConfig):
         }
         self.update_model_params(shared_config)
 
-    def update_model_params(self, args: Dict[str, Any], overwrite: bool = False) -> None:
+    def update_model_params(
+        self, args: Dict[str, Any], overwrite: bool = False
+    ) -> None:
         """Update model parameters for all models"""
         for model in self.models + self.evaluator_models:
             for key, value in args.items():
@@ -329,8 +331,12 @@ class DatabaseConfig:
             "NOT pre-computed bin indices. OpenEvolve handles all scaling and binning internally."
         },
     )
-    feature_bins: Union[int, Dict[str, int]] = 10  # Can be int (all dims) or dict (per-dim)
-    diversity_reference_size: int = 20  # Size of reference set for diversity calculation
+    feature_bins: Union[int, Dict[str, int]] = (
+        10  # Can be int (all dims) or dict (per-dim)
+    )
+    diversity_reference_size: int = (
+        20  # Size of reference set for diversity calculation
+    )
 
     # Migration parameters for island-based evolution
     migration_interval: int = 50  # Migrate every N generations
@@ -442,7 +448,9 @@ class Config:
         if config.prompt.template_dir:
             template_path = Path(config.prompt.template_dir)
             if not template_path.is_absolute():
-                config.prompt.template_dir = str((config_path.parent / template_path).resolve())
+                config.prompt.template_dir = str(
+                    (config_path.parent / template_path).resolve()
+                )
 
         return config
 
@@ -457,7 +465,10 @@ class Config:
         # Remove None values for temperature and top_p to avoid dacite type errors;
         # alternatively, pass check_types=False to dacite.from_dict, but that can hide other issues
         if "llm" in config_dict:
-            if "temperature" in config_dict["llm"] and config_dict["llm"]["temperature"] is None:
+            if (
+                "temperature" in config_dict["llm"]
+                and config_dict["llm"]["temperature"] is None
+            ):
                 del config_dict["llm"]["temperature"]
             if "top_p" in config_dict["llm"] and config_dict["llm"]["top_p"] is None:
                 del config_dict["llm"]["top_p"]
@@ -474,7 +485,10 @@ class Config:
         if config.database.random_seed is None and config.random_seed is not None:
             config.database.random_seed = config.random_seed
 
-        if config.prompt.programs_as_changes_description and not config.diff_based_evolution:
+        if (
+            config.prompt.programs_as_changes_description
+            and not config.diff_based_evolution
+        ):
             raise ValueError(
                 "prompt.programs_as_changes_description=true requires diff_based_evolution=true "
                 "(full rewrites cannot reliably update code and changes_description together)"
